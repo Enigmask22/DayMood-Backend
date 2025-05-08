@@ -238,6 +238,7 @@ Input validation is performed using `class-validator` and `class-transformer` wi
 UNLICENSED
 
 <!-- VERSION_BADGE_PLACEHOLDER -->
+[![Version](https://img.shields.io/badge/version-v0.0.6-blue)](https://github.com/Enigmask22/DayMood-Backend/releases/tag/v0.0.6)
 [![Version](https://img.shields.io/badge/version-v0.0.5-blue)](https://github.com/hungdt31/day-mood-backend/releases/tag/v0.0.5)
 [![Version](https://img.shields.io/badge/version-v0.0.5-blue)](https://github.com/hungdt31/day-mood-backend/releases/tag/v0.0.5)
 [![Version](https://img.shields.io/badge/version-v0.0.4-blue)](https://github.com/hungdt31/day-mood-backend/releases/tag/v0.0.4)
