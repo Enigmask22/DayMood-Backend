@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           Int         @id @default(autoincrement())
+  email        String      @unique
+  username     String
+  password     String
+  phone        String?
+  age          Int?
+  is_deleted   Boolean     @default(false)
+  deleted_at   DateTime?
+  created_time DateTime    @default(now())
+  updated_time DateTime    @updatedAt
+  address      String?
+  role         UserRole?   @default(USER)
+  gender       UserGender? @default(OTHER)
+  files        File[]      @relation("UserFiles")
+  records      Record[]
+
+  @@map("users")
+}
+
+
+model Record {
+  id           Int              @id @default(autoincrement())
+  title        String
+  content      String
+  status       RecordStatus     @default(ACTIVE)
+  created_time DateTime         @default(now())
+  updated_time DateTime         @updatedAt
+  date         DateTime         @default(now())
+  mood_id      Int?
+  user_id      Int
+  activities   ActivityRecord[]
+  files        File[]
+  user         User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("records")
+}
+
+model ActivityRecord {
+  activity_id  Int
+  record_id    Int
+  created_time DateTime @default(now())
+  record       Record   @relation(fields: [record_id], references: [id], onDelete: Cascade)
+
+  @@id([activity_id, record_id])
+  @@map("activity_records")
+}
+
+model File {
+  id           Int      @id @default(autoincrement())
+  fname        String
+  type         String
+  url          String
+  fkey         String
+  size         Decimal
+  duration     String?  // Thời lượng cho file audio
+  record_id    Int?
+  user_id      Int?
+  created_time DateTime @default(now())
+  updated_time DateTime @updatedAt
+  record       Record?  @relation(fields: [record_id], references: [id], onDelete: Cascade)
+  user         User?    @relation("UserFiles", fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("files")
+}
+
+enum RecordStatus {
+  ACTIVE
+  DRAFT
+  DELETED
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserGender {
+  MALE
+  FAMALE
+  OTHER
+}

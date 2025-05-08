@@ -1,0 +1,144 @@
+# .github/workflows/nestjs-ci.yml
+
+name: NestJS CI/CD Pipeline # Tên của workflow hiển thị trên GitHub Actions
+
+on: # Các sự kiện kích hoạt workflow
+  push:
+    branches: ['main', 'master'] # Chạy khi push lên nhánh main hoặc master
+  pull_request:
+    branches: ['main', 'master'] # Chạy khi có pull request tới nhánh main hoặc master
+  workflow_dispatch: # Cho phép chạy thủ công từ giao diện GitHub Actions
+
+# THÊM HOẶC SỬA ĐỔI MỤC NÀY
+permissions:
+  contents: write # Cho phép checkout, commit, push, tag, tạo release
+  # pull-requests: read # Có thể cần nếu bạn có các action liên quan đến PR
+
+jobs: # Danh sách các công việc cần thực hiện
+  build_and_test: # Tên của job (bạn có thể đặt tên khác)
+    runs-on: ubuntu-latest # Môi trường chạy job (sử dụng máy ảo Ubuntu mới nhất)
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x] # Chạy job với nhiều phiên bản Node.js (tùy chọn)
+
+    steps: # Các bước tuần tự trong job
+      - name: Checkout Repository # Bước 1: Lấy mã nguồn từ repository
+        uses: actions/checkout@v4 # Sử dụng action chính thức để checkout code
+
+      - name: Set up Node.js ${{ matrix.node-version }} # Bước 2: Cài đặt Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm' # Tự động cache npm dependencies dựa trên package-lock.json
+
+      - name: Install Dependencies # Bước 3: Cài đặt các gói phụ thuộc
+        run: npm ci # Sử dụng 'npm ci' thay vì 'npm install' trong CI để đảm bảo cài đặt chính xác từ package-lock.json
+
+      - name: Generate Prisma Client # Bước 3.5: Tạo Prisma Client types
+        working-directory: ./src
+        run: npx prisma generate
+
+      # (Tùy chọn) Bước 4: Chạy Linting (nếu bạn có script lint)
+      # - name: Run Linter
+      #   run: npm run lint # Thay 'lint' bằng tên script lint trong package.json của bạn
+
+      # (Tùy chọn nhưng khuyến nghị) Bước 5: Chạy Unit Tests
+      - name: Run Unit Tests
+        run: npm run test # Thay 'test' bằng tên script unit test của bạn
+
+      # (Tùy chọn) Bước 6: Chạy E2E Tests (thường cần cấu hình thêm DB hoặc môi trường)
+      # - name: Run E2E Tests
+      #   run: npm run test:e2e
+
+      # Bước 7: Build ứng dụng
+      - name: Build Application
+        run: npm run build # Thay 'build' bằng tên script build của bạn
+
+      # --- Phần Deployment (Ví dụ cơ bản - Cần tùy chỉnh nhiều) ---
+      # Bước 8: Deploy (ví dụ: sử dụng SSH) - Chỉ chạy khi push lên nhánh main
+      # - name: Deploy to Production
+      #   if: github.ref == 'refs/heads/main' && github.event_name == 'push' # Chỉ deploy khi push lên main
+      #   uses: appleboy/ssh-action@master
+      #   with:
+      #     host: ${{ secrets.SSH_HOST }} # Lấy từ GitHub Secrets
+      #     username: ${{ secrets.SSH_USERNAME }}
+      #     key: ${{ secrets.SSH_PRIVATE_KEY }}
+      #     port: ${{ secrets.SSH_PORT || 22 }}
+      #     script: |
+      #       cd /path/to/your/app # Điều hướng đến thư mục ứng dụng trên server
+      #       git pull origin main # Kéo code mới nhất
+      #       npm install --production # Cài đặt chỉ dependencies production
+      #       npm run build # Build lại ứng dụng (nếu cần)
+      #       pm2 restart your-app-name # Khởi động lại ứng dụng bằng PM2 (ví dụ)
+
+      # === CÁC BƯỚC MỚI CHO VERSIONING VÀ RELEASE ===
+
+      - name: Configure Git
+        # Chỉ chạy khi build/test thành công và push lên nhánh chính
+        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Bump version and create tag
+        # Chỉ chạy khi build/test thành công và push lên nhánh chính
+        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
+        # Sử dụng 'npm version patch' để tăng số cuối (0.0.1 -> 0.0.2)
+        # Thay 'patch' thành 'minor' (0.1.0 -> 0.2.0) hoặc 'major' (1.0.0 -> 2.0.0) nếu muốn
+        # Thêm [skip ci] vào message để tránh vòng lặp CI
+        # Use a block scalar for the run command
+        run: |
+          npm version patch -m "chore(release): version %s [skip ci]"
+
+      - name: Push changes and tag
+        # Chỉ chạy khi build/test thành công và push lên nhánh chính
+        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
+        run: |
+          # Pull latest changes with rebase before pushing
+          git pull origin ${{ github.ref_name }} --rebase
+          # Push the commit and the tag
+          git push origin HEAD:${{ github.ref_name }} --follow-tags
+
+      - name: Extract version # Lấy version mới từ package.json
+        # Chỉ chạy khi build/test thành công và push lên nhánh chính
+        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
+        id: extract_version
+        # Sử dụng node để đọc version, đáng tin cậy hơn grep/sed
+        run: echo "NEW_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        # Chỉ chạy khi build/test thành công và push lên nhánh chính
+        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.extract_version.outputs.NEW_VERSION }} # Tag name dạng vX.Y.Z
+          name: Release v${{ steps.extract_version.outputs.NEW_VERSION }} # Tên Release
+          body:
+            | # Nội dung Release (có thể tự động tạo changelog ở đây nếu muốn)
+            New release version v${{ steps.extract_version.outputs.NEW_VERSION }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Token mặc định có quyền tạo release
+
+      # === (TÙY CHỌN) BƯỚC CẬP NHẬT BADGE TRONG README ===
+      # Bước này phức tạp hơn một chút vì cần sửa đổi file và commit lại
+
+      - name: Update README version badge
+        # Chỉ chạy khi build/test thành công và push lên nhánh chính
+        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
+        run: |
+          # Thay thế dòng chứa placeholder bằng badge mới
+          # Đảm bảo placeholder của bạn là duy nhất và nằm trên 1 dòng riêng
+          sed -i "s|<!-- VERSION_BADGE_PLACEHOLDER -->.*|<!-- VERSION_BADGE_PLACEHOLDER -->\n[![Version](https://img.shields.io/badge/version-v${{ steps.extract_version.outputs.NEW_VERSION }}-blue)](https://github.com/${{ github.repository }}/releases/tag/v${{ steps.extract_version.outputs.NEW_VERSION }})|" README.md
+
+      - name: Commit updated README
+        # Chỉ chạy khi build/test thành công và push lên nhánh chính
+        if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
+        uses: EndBug/add-and-commit@v9
+        with:
+          add: 'README.md'
+          message: 'chore: update version badge [skip ci]' # Thêm [skip ci]
+          committer_name: github-actions[bot]
+          committer_email: github-actions[bot]@users.noreply.github.com
