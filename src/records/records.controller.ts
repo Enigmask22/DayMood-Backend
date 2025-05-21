@@ -10,6 +10,7 @@ import {
   Version,
   VERSION_NEUTRAL,
   ParseIntPipe,
+  Res,
 } from '@nestjs/common';
 import { RecordsService } from './records.service';
 import { CreateRecordDto } from './dto/create-record.dto';
@@ -541,5 +542,62 @@ export class RecordsController {
     @Body() createActivityRecordDto: CreateActivityRecordDto,
   ) {
     return this.recordsService.addActivities(id, createActivityRecordDto);
+  }
+
+  @Public()
+  @Get('statistic/mood')
+  @ApiOperation({
+    summary: 'Thống kê cảm xúc của người dùng',
+    description: 'Phân tích cảm xúc của người dùng theo thời gian',
+  })
+  @ApiQuery({
+    name: 'user_id',
+    required: true,
+    description: 'User ID để lọc records',
+    type: Number,
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'month',
+    required: false,
+    description: 'Tháng cần thống kê (1-12)',
+    type: Number,
+    example: 5,
+  })
+  @ApiQuery({
+    name: 'year',
+    required: false,
+    description: 'Năm cần thống kê',
+    type: Number,
+    example: 2025,
+  })
+  @ResponseMessage('Get user sentiment statistics')
+  statisticMood(
+    @GetPaginateInfo() info: PaginateInfo,
+    @Query('user_id') userId: string,
+    @Query('month') month?: string,
+    @Query('year') year?: string,
+  ) {
+    // Đảm bảo user_id nằm trong where condition
+    if (!info.where) {
+      info.where = {};
+    }
+
+    if (userId) {
+      info.where.user_id = parseInt(userId);
+    }
+
+    // Thêm thông tin tháng và năm vào where condition
+    if (month || year) {
+      info.where.date = {};
+      if (month) {
+        info.where.date.month = parseInt(month);
+      }
+      if (year) {
+        info.where.date.year = parseInt(year);
+      }
+    }
+
+    return this.recordsService.statisticMood(info);
   }
 }

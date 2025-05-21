@@ -261,4 +261,161 @@ export class RecordsService {
       );
     }
   }
+
+  private calculateMoodStats(records: any[]) {
+    const moodStats: Record<number, number> = {};
+    records.forEach(record => {
+      if (record.mood_id) {
+        moodStats[record.mood_id] = (moodStats[record.mood_id] || 0) + 1;
+      }
+    });
+
+    // Chuyển đổi object thành mảng và sắp xếp theo số lần xuất hiện giảm dần
+    return Object.entries(moodStats).map(([moodId, count]) => ({
+      moodId: parseInt(moodId),
+      count,
+      percentage: (count / records.length) * 100 // Tính phần trăm xuất hiện
+    })).sort((a, b) => b.count - a.count);
+  }
+
+  private getAllDaysInMonth(year: number, month: number): string[] {
+    const days: string[] = [];
+    const lastDay = new Date(year, month + 1, 0).getDate(); // Lấy ngày cuối cùng của tháng
+    
+    for (let day = 2; day <= lastDay + 1; day++) {
+      const date = new Date(year, month, day);
+      days.push(date.toISOString().split('T')[0]);
+    }
+    
+    return days;
+  }
+
+  private calculateDailyMoodStats(records: any[], year: number, month: number) {
+    const dailyStats: Record<string, Record<number, number>> = {};
+    
+    // Lấy tất cả các ngày trong tháng
+    const allDaysInMonth = this.getAllDaysInMonth(year, month);
+    
+    // Khởi tạo tất cả các ngày với moodStats rỗng
+    allDaysInMonth.forEach(date => {
+      dailyStats[date] = {};
+    });
+    
+    // Đếm số lượng mood cho mỗi ngày có record
+    records.forEach(record => {
+      if (record.mood_id) {
+        const date = record.date.toISOString().split('T')[0];
+        dailyStats[date][record.mood_id] = (dailyStats[date][record.mood_id] || 0) + 1;
+      }
+    });
+
+    // Chuyển đổi thành mảng và sắp xếp theo ngày tăng dần
+    return Object.entries(dailyStats).map(([date, moodCounts]) => ({
+      date,
+      moodStats: Object.entries(moodCounts).map(([moodId, count]) => ({
+        moodId: parseInt(moodId),
+        count
+      })).sort((a, b) => b.count - a.count),
+      totalRecords: Object.values(moodCounts).reduce((sum, count) => sum + count, 0)
+    })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }
+
+  private findMostFrequentMood(moodStats: any[]) {
+    if (moodStats.length === 0) {
+      return {
+        moodId: null,
+        count: 0
+      };
+    }
+    return {
+      moodId: moodStats[0].moodId,
+      count: moodStats[0].count
+    };
+  }
+
+  async statisticMood(info: PaginateInfo) {
+    const { where } = info;
+    try {
+      const userId = where?.user_id;
+      if (!userId) {
+        throw new BadRequestException('User ID is required');
+      }
+
+      // Chuyển đổi user_id thành number
+      const parsedUserId = Number(userId);
+      if (isNaN(parsedUserId)) {
+        throw new BadRequestException('Invalid user ID format');
+      }
+
+      // Lấy thời gian hiện tại
+      const now = new Date();
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay()); // Bắt đầu từ Chủ nhật
+      startOfWeek.setHours(0, 0, 0, 0);
+
+      // Xử lý tháng và năm từ where condition
+      let startOfMonth: Date;
+      let month: number;
+      let year: number;
+      
+      if (where?.date?.month || where?.date?.year) {
+        month = where.date.month ? Number(where.date.month) - 1 : now.getMonth(); // Tháng trong JS là 0-11
+        year = where.date.year ? Number(where.date.year) : now.getFullYear();
+        startOfMonth = new Date(year, month, 1);
+      } else {
+        month = now.getMonth();
+        year = now.getFullYear();
+        startOfMonth = new Date(year, month, 1);
+      }
+
+      // Lấy tất cả records của user trong tuần và tháng
+      const records = await this.prismaService.record.findMany({
+        where: {
+          user_id: parsedUserId,
+          date: {
+            gte: startOfMonth,
+            lt: new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 1), // Ngày đầu tiên của tháng tiếp theo
+          },
+        },
+        select: {
+          mood_id: true,
+          date: true,
+        },
+        orderBy: {
+          date: 'desc',
+        },
+      });
+
+      // Phân loại records theo tuần và tháng
+      const weeklyRecords = records.filter(record => record.date >= startOfWeek);
+      const monthlyRecords = records;
+
+      // Thống kê mood theo tuần và tháng
+      const weeklyMoodStats = this.calculateMoodStats(weeklyRecords);
+      const monthlyMoodStats = this.calculateMoodStats(monthlyRecords);
+      const dailyMoodStats = this.calculateDailyMoodStats(monthlyRecords, year, month);
+
+      // Tìm mood xuất hiện nhiều nhất
+      const weeklyMostFrequentMood = this.findMostFrequentMood(weeklyMoodStats);
+      const monthlyMostFrequentMood = this.findMostFrequentMood(monthlyMoodStats);
+
+      return {
+        weekly: {
+          moodStats: weeklyMoodStats,
+          mostFrequentMood: weeklyMostFrequentMood,
+          totalRecords: weeklyRecords.length,
+        },
+        monthly: {
+          moodStats: monthlyMoodStats,
+          dailyMoodStats: dailyMoodStats,
+          mostFrequentMood: monthlyMostFrequentMood,
+          totalRecords: monthlyRecords.length,
+          month: month + 1, // Chuyển về tháng 1-12
+          year: year,
+        },
+      };
+    } catch (error) {
+      throw new BadRequestException('Lỗi khi thống kê: ' + error.message);
+    }
+  }
 }
