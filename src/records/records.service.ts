@@ -418,4 +418,131 @@ export class RecordsService {
       throw new BadRequestException('Lỗi khi thống kê: ' + error.message);
     }
   }
+
+private calculateActivityStats(records: any[], year: number, month: number) {
+  // Create a map to store activity counts by day
+  const activityStatsByDay: Record<string, Record<number, number>> = {};
+  
+  // Get all days in the month
+  const allDaysInMonth = this.getAllDaysInMonth(year, month);
+  
+  // Initialize all days with empty activity counts
+  allDaysInMonth.forEach(date => {
+    activityStatsByDay[date] = {};
+  });
+  
+  // Count activities for each day
+  records.forEach(record => {
+    if (record.activities && record.activities.length > 0) {
+      const dateStr = record.date.toISOString().split('T')[0];
+      
+      // Count each activity type - handle the activity_records properly
+      record.activities.forEach(activityRecord => {
+        const activityId = activityRecord.activity_id;
+        activityStatsByDay[dateStr][activityId] = (activityStatsByDay[dateStr][activityId] || 0) + 1;
+      });
+    }
+  });
+  
+  // Convert to desired output format - activity_id: [count for day1, count for day2, ...]
+  const result: Record<number, number[]> = {};
+  
+  // Find all unique activity IDs
+  const allActivityIds = new Set<number>();
+  Object.values(activityStatsByDay).forEach(dayStats => {
+    Object.keys(dayStats).forEach(activityId => {
+      allActivityIds.add(Number(activityId));
+    });
+  });
+  
+  // For each activity ID, create an array of counts for each day
+  allActivityIds.forEach(activityId => {
+    result[activityId] = allDaysInMonth.map(date => 
+      activityStatsByDay[date][activityId] || 0
+    );
+  });
+  
+  return {
+    activityStats: result,
+    dates: allDaysInMonth
+  };
+}
+
+async statisticActivity(info: PaginateInfo) {
+  const { where } = info;
+  try {
+    const userId = where?.user_id;
+    if (!userId) {
+      throw new BadRequestException('User ID is required');
+    }
+
+    // Convert user_id to number
+    const parsedUserId = Number(userId);
+    if (isNaN(parsedUserId)) {
+      throw new BadRequestException('Invalid user ID format');
+    }
+
+    // Get current time
+    const now = new Date();
+
+    // Process month and year from where condition
+    let month: number;
+    let year: number;
+    
+    if (where?.date?.month || where?.date?.year) {
+      month = where.date.month ? Number(where.date.month) - 1 : now.getMonth(); // Month in JS is 0-11
+      year = where.date.year ? Number(where.date.year) : now.getFullYear();
+    } else {
+      month = now.getMonth();
+      year = now.getFullYear();
+    }
+
+    const startOfMonth = new Date(year, month, 1);
+    const endOfMonth = new Date(year, month + 1, 0);
+
+    // Get all records with their activities for the user in the specified month
+    const records = await this.prismaService.record.findMany({
+      where: {
+        user_id: parsedUserId,
+        date: {
+          gte: startOfMonth,
+          lte: endOfMonth,
+        },
+      },
+      include: {
+        activities: true, // This will include activity_records properly
+      },
+      orderBy: {
+        date: 'asc',
+      },
+    });
+
+    // Calculate activity statistics
+    const activityData = this.calculateActivityStats(records, year, month);
+
+    // Since we don't have an activity model, we'll just use the activity IDs as identifiers
+    const activityIds = Object.keys(activityData.activityStats).map(Number);
+    
+    // Create a placeholder map for activity names (using ID as display value)
+    const activityNames: Record<number, string> = {};
+    activityIds.forEach(id => {
+      activityNames[id] = `Activity ${id}`;
+    });
+
+    // Build final response
+    return {
+      monthly: {
+        activityData: activityData.activityStats,
+        activityIds: activityIds, // Including the IDs explicitly
+        activityNames: activityNames,
+        dates: activityData.dates,
+        month: month + 1, // Convert to 1-12 format
+        year: year,
+        totalRecords: records.length
+      }
+    };
+  } catch (error) {
+    throw new BadRequestException('Error in activity statistics: ' + error.message);
+  }
+}
 }

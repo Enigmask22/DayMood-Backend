@@ -600,4 +600,64 @@ export class RecordsController {
 
     return this.recordsService.statisticMood(info);
   }
+
+  @Public()
+  @Get('statistic/activity')
+  @ApiOperation({
+    summary: 'Thống kê hoạt động của người dùng',
+    description: 'Lấy thông tin về hoạt động mỗi ngày của người dùng ở tháng cần thống kê',
+  })
+  @ApiQuery({
+    name: 'user_id',
+    required: true,
+    description: 'User ID để lọc records',
+    type: Number,
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'month',
+    required: false,
+    description: 'Tháng cần thống kê (1-12)',
+    type: Number,
+    example: 5,
+  })
+  @ApiQuery({
+    name: 'year',
+    required: false,
+    description: 'Năm cần thống kê',
+    type: Number,
+    example: 2025,
+  })
+
+  @ResponseMessage('Get user sentiment statistics')
+  statisticActivity(
+    @GetPaginateInfo() info: PaginateInfo,
+    @Query('user_id') userId: string,
+    @Query('month') month?: string,
+    @Query('year') year?: string,
+  ) {
+    // Đảm bảo user_id nằm trong where condition
+    if (!info.where) {
+      info.where = {};
+    }
+
+    if (userId) {
+      info.where.user_id = parseInt(userId);
+    }
+
+    // Thêm thông tin tháng và năm vào where condition
+    if (month || year) {
+      info.where.date = {};
+      if (month) {
+        info.where.date.month = parseInt(month);
+      }
+      if (year) {
+        info.where.date.year = parseInt(year);
+      }
+    }
+
+    return this.recordsService.statisticActivity(info);
+  }
 }
+
+
