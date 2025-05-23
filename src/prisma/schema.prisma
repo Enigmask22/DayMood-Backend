@@ -28,7 +28,6 @@ model User {
   @@map("users")
 }
 
-
 model Record {
   id           Int              @id @default(autoincrement())
   title        String
@@ -36,9 +35,9 @@ model Record {
   status       RecordStatus     @default(ACTIVE)
   created_time DateTime         @default(now())
   updated_time DateTime         @updatedAt
-  date         DateTime         @default(now())
   mood_id      Int?
   user_id      Int
+  date         DateTime         @default(now())
   activities   ActivityRecord[]
   files        File[]
   user         User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -63,11 +62,11 @@ model File {
   url          String
   fkey         String
   size         Decimal
-  duration     String?  // Thời lượng cho file audio
   record_id    Int?
   user_id      Int?
   created_time DateTime @default(now())
   updated_time DateTime @updatedAt
+  duration     String?
   record       Record?  @relation(fields: [record_id], references: [id], onDelete: Cascade)
   user         User?    @relation("UserFiles", fields: [user_id], references: [id], onDelete: Cascade)
 
