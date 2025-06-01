@@ -239,6 +239,7 @@ UNLICENSED
 
 <!-- VERSION_BADGE_PLACEHOLDER -->
 [![Version](https://img.shields.io/badge/version-v0.0.11-blue)](https://github.com/Enigmask22/DayMood-Backend/releases/tag/v0.0.11)
+[![Version](https://img.shields.io/badge/version-v0.0.11-blue)](https://github.com/Enigmask22/DayMood-Backend/releases/tag/v0.0.11)
 [![Version](https://img.shields.io/badge/version-v0.0.10-blue)](https://github.com/Enigmask22/DayMood-Backend/releases/tag/v0.0.10)
 [![Version](https://img.shields.io/badge/version-v0.0.10-blue)](https://github.com/Enigmask22/DayMood-Backend/releases/tag/v0.0.10)
 [![Version](https://img.shields.io/badge/version-v0.0.9-blue)](https://github.com/Enigmask22/DayMood-Backend/releases/tag/v0.0.9)
