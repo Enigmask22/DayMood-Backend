@@ -85,6 +85,13 @@ async function bootstrap() {
   });
 
   // start server at port ${PORT}
-  await app.listen(8000, '0.0.0.0');
+  // await app.listen(8000, '0.0.0.0');
+  await app.listen(configService.get<string>('PORT'), () => {
+    console.log(
+      `Server is running at http://localhost:${configService.get<string>(
+        'PORT',
+      )}`,
+    );
+  });
 }
 bootstrap();
