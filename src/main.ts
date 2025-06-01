@@ -84,14 +84,12 @@ async function bootstrap() {
     },
   });
 
-  // start server at port ${PORT}
-  // await app.listen(8000, '0.0.0.0');
-  await app.listen(configService.get<string>('PORT'), () => {
-    console.log(
-      `Server is running at http://localhost:${configService.get<string>(
-        'PORT',
-      )}`,
-    );
+  // start server at port ${PORT} với fallback
+  const port = configService.get<string>('PORT') || '8000';
+  const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
+
+  await app.listen(port, host, () => {
+    console.log(`Server is running at http://${host}:${port}`);
   });
 }
 bootstrap();
