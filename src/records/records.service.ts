@@ -2,19 +2,37 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
-  UseGuards,
+  // UseGuards, // Commented out if not used
 } from '@nestjs/common';
 import { CreateRecordDto } from './dto/create-record.dto';
 import { UpdateRecordDto } from './dto/update-record.dto';
-import { InjectModel } from '@nestjs/mongoose';
+// import { InjectModel } from '@nestjs/mongoose'; // Commented out if not used
 import { genSaltSync, hashSync, compareSync } from 'bcryptjs';
-import { RegisterDto } from 'src/auth/dto/create-user.dto';
-import { IUser } from '../interface/users.interface';
+// import { RegisterDto } from 'src/auth/dto/create-user.dto'; // Commented out if not used
+// import { IUser } from '../interface/users.interface'; // Commented out if not used
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { PaginateInfo } from 'src/interface/paginate.interface';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { CreateActivityRecordDto } from './dto/create-activity-record.dto';
+import {
+  startOfWeek,
+  addMonths,
+  set,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  lastDayOfMonth,
+  format as formatDate,
+  getMonth,
+  getYear,
+  getDate,
+} from 'date-fns';
+import {
+  toZonedTime,
+  fromZonedTime,
+  format as formatInTimeZone,
+} from 'date-fns-tz';
 
 @Injectable()
 export class RecordsService {
@@ -277,39 +295,63 @@ export class RecordsService {
       percentage: (count / records.length) * 100 // Tính phần trăm xuất hiện
     })).sort((a, b) => b.count - a.count);
   }
-
-  private getAllDaysInMonth(year: number, month: number): string[] {
+  private getAllDaysInMonth(year: number, month: number, timeZone: string): string[] {
     const days: string[] = [];
-    const lastDay = new Date(year, month + 1, 0).getDate(); // Lấy ngày cuối cùng của tháng
+    // Create a date in the target timezone to ensure month boundaries are correct for that zone
+    const firstDayOfMonthInTz = toZonedTime(new Date(Date.UTC(year, month, 1)), timeZone);
+    const actualYear = getYear(firstDayOfMonthInTz);
+    const actualMonth = getMonth(firstDayOfMonthInTz);
+
+    const startOfMonthDate = startOfMonth(new Date(actualYear, actualMonth, 1));
+    const endOfMonthDate = endOfMonth(startOfMonthDate);
+
+    const interval = { start: startOfMonthDate, end: endOfMonthDate }; // These are now local to the server's TZ or effectively naive
+    const datesInMonth = eachDayOfInterval(interval);
     
-    for (let day = 2; day <= lastDay + 1; day++) {
-      const date = new Date(year, month, day);
-      days.push(date.toISOString().split('T')[0]);
+    datesInMonth.forEach(date => {
+      // Format the date as if it's in the target timezone for the string representation
+      days.push(formatInTimeZone(fromZonedTime(date, timeZone), 'yyyy-MM-dd', { timeZone }));
+      // Alternative: if `date` is already considered to be in the target timezone's "local" time for that day:
+      // days.push(formatDate(date, 'yyyy-MM-dd')); 
+      // For consistency, let's ensure we are formatting a date that represents the target timezone's day
+      // The initial `firstDayOfMonthInTz` and subsequent `startOfMonthDate`, `endOfMonthDate` should be handled carefully.
+      // Let's simplify: construct Date objects for year, month, day in UTC, then format in target TZ.
+    });
+    
+    // Corrected approach for getAllDaysInMonth:
+    const correctedDays: string[] = [];
+    const firstDate = new Date(year, month, 1);
+    const lastDate = lastDayOfMonth(firstDate);
+    const numDays = getDate(lastDate);
+
+    for (let day = 1; day <= numDays; day++) {
+      // Create a date that represents midnight in the target timezone for that specific day
+      const dateInTz = toZonedTime(Date.UTC(year, month, day), timeZone);
+      correctedDays.push(formatInTimeZone(dateInTz, 'yyyy-MM-dd', { timeZone }));
     }
-    
-    return days;
+    return correctedDays;
   }
 
-  private calculateDailyMoodStats(records: any[], year: number, month: number) {
+  private calculateDailyMoodStats(records: any[], year: number, month: number, timeZone: string) {
     const dailyStats: Record<string, Record<number, number>> = {};
     
-    // Lấy tất cả các ngày trong tháng
-    const allDaysInMonth = this.getAllDaysInMonth(year, month);
+    const allDaysInMonth = this.getAllDaysInMonth(year, month, timeZone);
     
-    // Khởi tạo tất cả các ngày với moodStats rỗng
     allDaysInMonth.forEach(date => {
       dailyStats[date] = {};
     });
     
-    // Đếm số lượng mood cho mỗi ngày có record
     records.forEach(record => {
       if (record.mood_id) {
-        const date = record.date.toISOString().split('T')[0];
-        dailyStats[date][record.mood_id] = (dailyStats[date][record.mood_id] || 0) + 1;
+        const zonedDateTime = toZonedTime(record.date, timeZone); // record.date is UTC
+        const dateStr = formatInTimeZone(zonedDateTime, 'yyyy-MM-dd', { timeZone });
+        
+        if (dailyStats[dateStr]) {
+          dailyStats[dateStr][record.mood_id] = (dailyStats[dateStr][record.mood_id] || 0) + 1;
+        }
       }
     });
 
-    // Chuyển đổi thành mảng và sắp xếp theo ngày tăng dần
     return Object.entries(dailyStats).map(([date, moodCounts]) => ({
       date,
       moodStats: Object.entries(moodCounts).map(([moodId, count]) => ({
@@ -333,7 +375,7 @@ export class RecordsService {
     };
   }
 
-  async statisticMood(info: PaginateInfo) {
+  async statisticMood(info: PaginateInfo, timezone: string = 'UTC') {
     const { where } = info;
     try {
       const userId = where?.user_id;
@@ -341,61 +383,64 @@ export class RecordsService {
         throw new BadRequestException('User ID is required');
       }
 
-      // Chuyển đổi user_id thành number
       const parsedUserId = Number(userId);
       if (isNaN(parsedUserId)) {
         throw new BadRequestException('Invalid user ID format');
       }
 
-      // Lấy thời gian hiện tại
-      const now = new Date();
-      const startOfWeek = new Date(now);
-      startOfWeek.setDate(now.getDate() - now.getDay()); // Bắt đầu từ Chủ nhật
-      startOfWeek.setHours(0, 0, 0, 0);
-
-      // Xử lý tháng và năm từ where condition
-      let startOfMonth: Date;
-      let month: number;
-      let year: number;
+      const now = new Date(); // Current moment in UTC
+      const nowInUserTz = toZonedTime(now, timezone);
       
+      let targetMonth: number;
+      let targetYear: number;
+
       if (where?.date?.month || where?.date?.year) {
-        month = where.date.month ? Number(where.date.month) - 1 : now.getMonth(); // Tháng trong JS là 0-11
-        year = where.date.year ? Number(where.date.year) : now.getFullYear();
-        startOfMonth = new Date(year, month, 1);
+        targetMonth = where.date.month ? Number(where.date.month) - 1 : getMonth(nowInUserTz);
+        targetYear = where.date.year ? Number(where.date.year) : getYear(nowInUserTz);
       } else {
-        month = now.getMonth();
-        year = now.getFullYear();
-        startOfMonth = new Date(year, month, 1);
+        targetMonth = getMonth(nowInUserTz);
+        targetYear = getYear(nowInUserTz);
       }
 
-      // Lấy tất cả records của user trong tuần và tháng
+      // Create the start of the month in the user's timezone (e.g., June 1st, 00:00:00 in UTC+7)
+      // For this, we need a Date object that, when interpreted in UTC, represents YYYY-MM-01 00:00:00 in the target timezone.
+      // So, we construct YYYY-MM-01 00:00:00 in target timezone, then convert to UTC.
+      const firstDayOfMonthUserTzWallTime = new Date(targetYear, targetMonth, 1, 0, 0, 0);
+      const startOfMonthUTC = fromZonedTime(firstDayOfMonthUserTzWallTime, timezone);
+
+      // Create the end of the month in the user's timezone (e.g., June 30th, 23:59:59.999 in UTC+7)
+      // This will be the start of the *next* month in user's timezone, then converted to UTC.
+      const firstDayOfNextMonthUserTzWallTime = new Date(targetYear, targetMonth + 1, 1, 0, 0, 0);
+      const endOfMonthExclusiveUTC = fromZonedTime(firstDayOfNextMonthUserTzWallTime, timezone);
+      
+      // For weekly stats: Start of the current actual week in user's timezone
+      const startOfCurrentActualWeekUserTz = startOfWeek(nowInUserTz, { weekStartsOn: 0 }); // Assuming week starts on Sunday (0)
+      const startOfCurrentActualWeekUTC = fromZonedTime(startOfCurrentActualWeekUserTz, timezone);
+
       const records = await this.prismaService.record.findMany({
         where: {
           user_id: parsedUserId,
-          date: {
-            gte: startOfMonth,
-            lt: new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 1), // Ngày đầu tiên của tháng tiếp theo
+          date: { // Dates in DB are UTC
+            gte: startOfMonthUTC,
+            lt: endOfMonthExclusiveUTC, // Use `lt` with the start of the next month
           },
         },
         select: {
           mood_id: true,
-          date: true,
+          date: true, // This date is in UTC
         },
         orderBy: {
           date: 'desc',
         },
       });
 
-      // Phân loại records theo tuần và tháng
-      const weeklyRecords = records.filter(record => record.date >= startOfWeek);
+      const weeklyRecords = records.filter(record => record.date >= startOfCurrentActualWeekUTC);
       const monthlyRecords = records;
 
-      // Thống kê mood theo tuần và tháng
       const weeklyMoodStats = this.calculateMoodStats(weeklyRecords);
       const monthlyMoodStats = this.calculateMoodStats(monthlyRecords);
-      const dailyMoodStats = this.calculateDailyMoodStats(monthlyRecords, year, month);
+      const dailyMoodStats = this.calculateDailyMoodStats(monthlyRecords, targetYear, targetMonth, timezone);
 
-      // Tìm mood xuất hiện nhiều nhất
       const weeklyMostFrequentMood = this.findMostFrequentMood(weeklyMoodStats);
       const monthlyMostFrequentMood = this.findMostFrequentMood(monthlyMoodStats);
 
@@ -410,44 +455,40 @@ export class RecordsService {
           dailyMoodStats: dailyMoodStats,
           mostFrequentMood: monthlyMostFrequentMood,
           totalRecords: monthlyRecords.length,
-          month: month + 1, // Chuyển về tháng 1-12
-          year: year,
+          month: targetMonth + 1, 
+          year: targetYear,
         },
       };
     } catch (error) {
-      throw new BadRequestException('Lỗi khi thống kê: ' + error.message);
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException('Lỗi khi thống kê mood: ' + error.message);
     }
   }
 
-private calculateActivityStats(records: any[], year: number, month: number) {
-  // Create a map to store activity counts by day
+private calculateActivityStats(records: any[], year: number, month: number, timeZone: string) {
   const activityStatsByDay: Record<string, Record<number, number>> = {};
   
-  // Get all days in the month
-  const allDaysInMonth = this.getAllDaysInMonth(year, month);
+  const allDaysInMonth = this.getAllDaysInMonth(year, month, timeZone);
   
-  // Initialize all days with empty activity counts
   allDaysInMonth.forEach(date => {
     activityStatsByDay[date] = {};
   });
   
-  // Count activities for each day
   records.forEach(record => {
     if (record.activities && record.activities.length > 0) {
-      const dateStr = record.date.toISOString().split('T')[0];
+      const zonedDateTime = toZonedTime(record.date, timeZone); // record.date is UTC
+      const dateStr = formatInTimeZone(zonedDateTime, 'yyyy-MM-dd', { timeZone });
       
-      // Count each activity type - handle the activity_records properly
-      record.activities.forEach(activityRecord => {
-        const activityId = activityRecord.activity_id;
-        activityStatsByDay[dateStr][activityId] = (activityStatsByDay[dateStr][activityId] || 0) + 1;
-      });
+      if (activityStatsByDay[dateStr]) {
+        record.activities.forEach(activityRecord => {
+          const activityId = activityRecord.activity_id;
+          activityStatsByDay[dateStr][activityId] = (activityStatsByDay[dateStr][activityId] || 0) + 1;
+        });
+      }
     }
   });
   
-  // Convert to desired output format - activity_id: [count for day1, count for day2, ...]
   const result: Record<number, number[]> = {};
-  
-  // Find all unique activity IDs
   const allActivityIds = new Set<number>();
   Object.values(activityStatsByDay).forEach(dayStats => {
     Object.keys(dayStats).forEach(activityId => {
@@ -455,7 +496,6 @@ private calculateActivityStats(records: any[], year: number, month: number) {
     });
   });
   
-  // For each activity ID, create an array of counts for each day
   allActivityIds.forEach(activityId => {
     result[activityId] = allDaysInMonth.map(date => 
       activityStatsByDay[date][activityId] || 0
@@ -468,7 +508,7 @@ private calculateActivityStats(records: any[], year: number, month: number) {
   };
 }
 
-async statisticActivity(info: PaginateInfo) {
+async statisticActivity(info: PaginateInfo, timezone: string = 'UTC') {
   const { where } = info;
   try {
     const userId = where?.user_id;
@@ -476,73 +516,106 @@ async statisticActivity(info: PaginateInfo) {
       throw new BadRequestException('User ID is required');
     }
 
-    // Convert user_id to number
     const parsedUserId = Number(userId);
     if (isNaN(parsedUserId)) {
       throw new BadRequestException('Invalid user ID format');
     }
 
-    // Get current time
     const now = new Date();
-
-    // Process month and year from where condition
-    let month: number;
-    let year: number;
+    const nowInUserTz = toZonedTime(now, timezone);
+    let targetMonth: number;
+    let targetYear: number;
     
     if (where?.date?.month || where?.date?.year) {
-      month = where.date.month ? Number(where.date.month) - 1 : now.getMonth(); // Month in JS is 0-11
-      year = where.date.year ? Number(where.date.year) : now.getFullYear();
+      targetMonth = where.date.month ? Number(where.date.month) - 1 : getMonth(nowInUserTz);
+      targetYear = where.date.year ? Number(where.date.year) : getYear(nowInUserTz);
     } else {
-      month = now.getMonth();
-      year = now.getFullYear();
+      targetMonth = getMonth(nowInUserTz);
+      targetYear = getYear(nowInUserTz);
     }
 
-    const startOfMonth = new Date(year, month, 1);
-    const endOfMonth = new Date(year, month + 1, 0);
+    const firstDayOfMonthUserTzWallTime = new Date(targetYear, targetMonth, 1, 0, 0, 0);
+    const startOfMonthUTC = fromZonedTime(firstDayOfMonthUserTzWallTime, timezone);
 
-    // Get all records with their activities for the user in the specified month
+    const firstDayOfNextMonthUserTzWallTime = new Date(targetYear, targetMonth + 1, 1, 0, 0, 0);
+    const endOfMonthExclusiveUTC = fromZonedTime(firstDayOfNextMonthUserTzWallTime, timezone);
+
+    // First get all unique activity IDs ever used by this user
+    const allUserActivityIds = await this.prismaService.activityRecord.findMany({
+      where: {
+        record: {
+          user_id: parsedUserId
+        }
+      },
+      select: {
+        activity_id: true
+      },
+      distinct: ['activity_id']
+    });
+
+    // Extract unique activity IDs into an array
+    const activityIds: number[] = [];
+    allUserActivityIds.forEach(item => {
+      activityIds.push(item.activity_id);
+    });
+
+    // Get current month's records
     const records = await this.prismaService.record.findMany({
       where: {
         user_id: parsedUserId,
         date: {
-          gte: startOfMonth,
-          lte: endOfMonth,
+          gte: startOfMonthUTC,
+          lt: endOfMonthExclusiveUTC,
         },
       },
-      include: {
-        activities: true, // This will include activity_records properly
+      select: {
+        date: true,
+        activities: { 
+          select: {
+            activity_id: true,
+          }
+        } 
       },
       orderBy: {
-        date: 'asc',
+        date: 'desc',
       },
     });
 
-    // Calculate activity statistics
-    const activityData = this.calculateActivityStats(records, year, month);
-
-    // Since we don't have an activity model, we'll just use the activity IDs as identifiers
-    const activityIds = Object.keys(activityData.activityStats).map(Number);
+    // Calculate activity stats for the current month with the records
+    const activityStatsResult = this.calculateActivityStats(records, targetYear, targetMonth, timezone);
     
-    // Create a placeholder map for activity names (using ID as display value)
-    const activityNames: Record<number, string> = {};
-    activityIds.forEach(id => {
-      activityNames[id] = `Activity ${id}`;
+    // Get the days in month array
+    const allDaysInMonth = activityStatsResult.dates;
+    
+    // Ensure all activities are included in the result
+    const activityData = { ...activityStatsResult.activityStats };
+    
+    // Create activity names (placeholder)
+    const activityNames: { [key: string]: string } = {};
+    
+    // Add any missing activities with arrays of zeros
+    activityIds.forEach(activityId => {
+      if (!activityData[activityId]) {
+        activityData[activityId] = Array(allDaysInMonth.length).fill(0);
+      }
+      // Add placeholder name for each activity
+      activityNames[activityId] = `Activity ${activityId}`;
     });
 
-    // Build final response
     return {
       monthly: {
-        activityData: activityData.activityStats,
-        activityIds: activityIds, // Including the IDs explicitly
+        activityData: activityData,
+        activityIds: activityIds,
         activityNames: activityNames,
-        dates: activityData.dates,
-        month: month + 1, // Convert to 1-12 format
-        year: year,
+        dates: allDaysInMonth,
+        month: targetMonth + 1,
+        year: targetYear,
         totalRecords: records.length
       }
     };
   } catch (error) {
-    throw new BadRequestException('Error in activity statistics: ' + error.message);
+    if (error instanceof BadRequestException) throw error;
+    throw new BadRequestException('Lỗi khi thống kê activity: ' + error.message);
   }
 }
 }
