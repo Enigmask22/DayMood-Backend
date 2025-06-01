@@ -84,12 +84,11 @@ async function bootstrap() {
     },
   });
 
-  // start server at port ${PORT} với fallback
-  const port = configService.get<string>('PORT') || '8000';
-  const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
+  // start server theo chuẩn Render
+  const PORT = process.env.PORT || 8000; // Sử dụng process.env.PORT trực tiếp
 
-  await app.listen(port, host, () => {
-    console.log(`Server is running at http://${host}:${port}`);
+  await app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
   });
 }
 bootstrap();
