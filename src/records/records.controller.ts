@@ -201,6 +201,147 @@ export class RecordsController {
   }
 
   @Public()
+  @Get('statistic/mood')
+  @ApiOperation({
+    summary: 'Get mood statistics',
+    description: 'Retrieves mood statistics for a user, filterable by month and year, adjusted for timezone.',
+  })
+  @ApiQuery({
+    name: 'user_id',
+    required: true,
+    description: 'User ID for filtering records',
+    type: Number,
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'month',
+    required: false,
+    description: 'Month for statistics (1-12)',
+    type: Number,
+    example: new Date().getMonth() + 1,
+  })
+  @ApiQuery({
+    name: 'year',
+    required: false,
+    description: 'Year for statistics',
+    type: Number,
+    example: new Date().getFullYear(),
+  })
+  @ApiQuery({
+    name: 'timezone',
+    required: false,
+    description: "Timezone string (e.g., 'America/New_York', 'Asia/Ho_Chi_Minh', 'UTC')",
+    type: String,
+    example: 'UTC',
+  })
+  @ResponseMessage('Get mood statistics')
+  statisticMood(
+    @Query('user_id') userId: string,
+    @Query('month') month?: string,
+    @Query('year') year?: string,
+    @Query('timezone') timezone?: string,
+  ) {
+    // Initialize PaginateInfo with default values for fields not strictly needed by this endpoint,
+    // but required by the interface.
+    const info: PaginateInfo = {
+      where: {},
+      page: 1, // Default or unused
+      skip: 0, // Default or unused
+      take: 10, // Default or unused
+      orderBy: undefined, // Default or unused
+      select: undefined, // Default or unused
+      include: undefined, // Default or unused
+    };
+
+    if (!userId) {
+      // The service method will throw a BadRequestException if userId is missing.
+    }
+    // The service method will parse userId to a number and handle potential NaN.
+    info.where.user_id = userId;
+
+    if (month || year) {
+      info.where.date = {};
+      if (month) {
+        // The service method will parse month to a number and handle potential NaN.
+        info.where.date.month = month;
+      }
+      if (year) {
+        // The service method will parse year to a number and handle potential NaN.
+        info.where.date.year = year;
+      }
+    }
+    return this.recordsService.statisticMood(info, timezone);
+  }
+
+  @Public()
+  @Get('statistic/activity')
+  @ApiOperation({
+    summary: 'Get activity statistics',
+    description: 'Retrieves activity statistics for a user, filterable by month and year, adjusted for timezone.',
+  })
+  @ApiQuery({
+    name: 'user_id',
+    required: true,
+    description: 'User ID for filtering records',
+    type: Number,
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'month',
+    required: false,
+    description: 'Month for statistics (1-12)',
+    type: Number,
+    example: new Date().getMonth() + 1,
+  })
+  @ApiQuery({
+    name: 'year',
+    required: false,
+    description: 'Year for statistics',
+    type: Number,
+    example: new Date().getFullYear(),
+  })
+  @ApiQuery({
+    name: 'timezone',
+    required: false,
+    description: "Timezone string (e.g., 'America/New_York', 'Asia/Ho_Chi_Minh', 'UTC')",
+    type: String,
+    example: 'UTC',
+  })
+  @ResponseMessage('Get activity statistics')
+  statisticActivity(
+    @Query('user_id') userId: string,
+    @Query('month') month?: string,
+    @Query('year') year?: string,
+    @Query('timezone') timezone?: string,
+  ) {
+    const info: PaginateInfo = {
+      where: {},
+      page: 1, 
+      skip: 0, 
+      take: 10, 
+      orderBy: undefined, 
+      select: undefined, 
+      include: undefined,
+    };
+
+    if (!userId) {
+      // Service will handle this
+    }
+    info.where.user_id = userId;
+
+    if (month || year) {
+      info.where.date = {};
+      if (month) {
+        info.where.date.month = month;
+      }
+      if (year) {
+        info.where.date.year = year;
+      }
+    }
+    return this.recordsService.statisticActivity(info, timezone);
+  }
+
+  @Public()
   @Get(':id')
   @ApiOperation({
     summary: 'Get a record by ID',
@@ -542,121 +683,6 @@ export class RecordsController {
     @Body() createActivityRecordDto: CreateActivityRecordDto,
   ) {
     return this.recordsService.addActivities(id, createActivityRecordDto);
-  }
-
-  @Public()
-  @Get('statistic/mood')
-  @ApiOperation({
-    summary: 'Thống kê cảm xúc của người dùng',
-    description: 'Phân tích cảm xúc của người dùng theo thời gian',
-  })
-  @ApiQuery({
-    name: 'user_id',
-    required: true,
-    description: 'User ID để lọc records',
-    type: Number,
-    example: 1,
-  })
-  @ApiQuery({
-    name: 'month',
-    required: false,
-    description: 'Tháng cần thống kê (1-12)',
-    type: Number,
-    example: 5,
-  })
-  @ApiQuery({
-    name: 'year',
-    required: false,
-    description: 'Năm cần thống kê',
-    type: Number,
-    example: 2025,
-  })
-  @ResponseMessage('Get user sentiment statistics')
-  statisticMood(
-    @GetPaginateInfo() info: PaginateInfo,
-    @Query('user_id') userId: string,
-    @Query('month') month?: string,
-    @Query('year') year?: string,
-  ) {
-    // Đảm bảo user_id nằm trong where condition
-    if (!info.where) {
-      info.where = {};
-    }
-
-    if (userId) {
-      info.where.user_id = parseInt(userId);
-    }
-
-    // Thêm thông tin tháng và năm vào where condition
-    if (month || year) {
-      info.where.date = {};
-      if (month) {
-        info.where.date.month = parseInt(month);
-      }
-      if (year) {
-        info.where.date.year = parseInt(year);
-      }
-    }
-
-    return this.recordsService.statisticMood(info);
-  }
-
-  @Public()
-  @Get('statistic/activity')
-  @ApiOperation({
-    summary: 'Thống kê hoạt động của người dùng',
-    description: 'Lấy thông tin về hoạt động mỗi ngày của người dùng ở tháng cần thống kê',
-  })
-  @ApiQuery({
-    name: 'user_id',
-    required: true,
-    description: 'User ID để lọc records',
-    type: Number,
-    example: 1,
-  })
-  @ApiQuery({
-    name: 'month',
-    required: false,
-    description: 'Tháng cần thống kê (1-12)',
-    type: Number,
-    example: 5,
-  })
-  @ApiQuery({
-    name: 'year',
-    required: false,
-    description: 'Năm cần thống kê',
-    type: Number,
-    example: 2025,
-  })
-
-  @ResponseMessage('Get user sentiment statistics')
-  statisticActivity(
-    @GetPaginateInfo() info: PaginateInfo,
-    @Query('user_id') userId: string,
-    @Query('month') month?: string,
-    @Query('year') year?: string,
-  ) {
-    // Đảm bảo user_id nằm trong where condition
-    if (!info.where) {
-      info.where = {};
-    }
-
-    if (userId) {
-      info.where.user_id = parseInt(userId);
-    }
-
-    // Thêm thông tin tháng và năm vào where condition
-    if (month || year) {
-      info.where.date = {};
-      if (month) {
-        info.where.date.month = parseInt(month);
-      }
-      if (year) {
-        info.where.date.year = parseInt(year);
-      }
-    }
-
-    return this.recordsService.statisticActivity(info);
   }
 }
 
