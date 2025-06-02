@@ -26,6 +26,7 @@ import { checkValidId } from 'src/core/id.guard';
 import { PaginateInfo } from 'src/interface/paginate.interface';
 import { ApiQuery, ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { ForbiddenResponseSchema, UnauthorizedResponseSchema } from 'src/core/transform.interceptor';
+import { VerifyPasswordDto } from './dto/verify-password.dto';
 
 @ApiTags('users')
 @ApiBearerAuth('token')
@@ -366,5 +367,53 @@ export class UsersController {
   @ResponseMessage('Take a user to trash')
   remove(@Param('id') id: number) {
     return this.usersService.remove(id);
+  }
+
+  @ApiOperation({
+    summary: 'Verify user password',
+    description: 'Verify if the provided password matches the current user\'s password'
+  })
+  @ApiBody({
+    type: VerifyPasswordDto,
+    description: 'Password to verify'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Password verification successful',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 200 },
+        message: { type: 'string', example: 'Password verified successfully' },
+        data: { 
+          type: 'object',
+          properties: {
+            verified: { type: 'boolean', example: true }
+          }
+        }
+      }
+    }
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Bad Request - Invalid password',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 400 },
+        message: { type: 'string', example: 'Invalid password' },
+        error: { type: 'string', example: 'Bad Request' }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Missing authentication',
+    schema: UnauthorizedResponseSchema
+  })
+  @Post('verify-password')
+  @ResponseMessage('Password verified successfully')
+  verifyPassword(@Body() verifyPasswordDto: VerifyPasswordDto, @User() user: IUser) {
+    return this.usersService.verifyPassword(verifyPasswordDto.password, user);
   }
 }

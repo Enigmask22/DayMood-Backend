@@ -599,7 +599,7 @@ async statisticActivity(info: PaginateInfo, timezone: string = 'UTC') {
         activityData[activityId] = Array(allDaysInMonth.length).fill(0);
       }
       // Add placeholder name for each activity
-      activityNames[activityId] = `Activity ${activityId}`;
+      activityNames[activityId] = `${activityId}`;
     });
 
     return {

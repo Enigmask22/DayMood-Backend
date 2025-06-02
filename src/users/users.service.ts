@@ -169,4 +169,21 @@ export class UsersService {
       },
     });
   }
+
+  async verifyPassword(password: string, user: IUser) {
+    // Find the user by ID and get the hashed password
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: { password: true },
+    });
+    if (!dbUser) {
+      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    }
+    // Compare the provided password with the hashed password
+    const isPasswordMatching = this.isValidPasword(password, dbUser.password);
+    if (!isPasswordMatching) {
+      throw new BadRequestException('Invalid password');
+    }
+    return { verified: true };
+  }
 }
