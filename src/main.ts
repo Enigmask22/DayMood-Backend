@@ -84,8 +84,11 @@ async function bootstrap() {
     },
   });
 
-  // start server at port ${PORT}
-  const PORT = process.env.PORT || 8000;
-  await app.listen(PORT, '0.0.0.0');
+  // start server theo chuẩn Render
+  const PORT = process.env.PORT || 8000; // Sử dụng process.env.PORT trực tiếp
+
+  await app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 }
 bootstrap();
