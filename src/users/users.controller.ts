@@ -26,7 +26,6 @@ import { checkValidId } from 'src/core/id.guard';
 import { PaginateInfo } from 'src/interface/paginate.interface';
 import { ApiQuery, ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { ForbiddenResponseSchema, UnauthorizedResponseSchema } from 'src/core/transform.interceptor';
-import { VerifyPasswordDto } from './dto/verify-password.dto';
 
 @ApiTags('users')
 @ApiBearerAuth('token')
@@ -231,10 +230,9 @@ export class UsersController {
   findOne(@Param('id') id: number) {
     return this.usersService.findOne(id);
   }
-
   @ApiOperation({
     summary: 'Update a user',
-    description: 'Update a user\'s information by ID'
+    description: 'Update a user\'s information by ID. Requires current password verification.'
   })
   @ApiParam({
     name: 'id',
@@ -291,15 +289,14 @@ export class UsersController {
     status: 401,
     description: 'Unauthorized - Invalid token or missing authentication',
     schema: UnauthorizedResponseSchema
-  })
-  @ApiResponse({ 
+  })  @ApiResponse({ 
     status: 400, 
-    description: 'Bad Request - Insufficient permissions or invalid data',
+    description: 'Bad Request - Insufficient permissions, invalid password, or invalid data',
     schema: {
       type: 'object',
       properties: {
         statusCode: { type: 'number', example: 400 },
-        message: { type: 'string', example: 'You cannot update information of another user' },
+        message: { type: 'string', example: 'Invalid current password' },
         error: { type: 'string', example: 'Bad Request' }
       }
     }
@@ -369,51 +366,4 @@ export class UsersController {
     return this.usersService.remove(id);
   }
 
-  @ApiOperation({
-    summary: 'Verify user password',
-    description: 'Verify if the provided password matches the current user\'s password'
-  })
-  @ApiBody({
-    type: VerifyPasswordDto,
-    description: 'Password to verify'
-  })
-  @ApiResponse({ 
-    status: 200, 
-    description: 'Password verification successful',
-    schema: {
-      type: 'object',
-      properties: {
-        statusCode: { type: 'number', example: 200 },
-        message: { type: 'string', example: 'Password verified successfully' },
-        data: { 
-          type: 'object',
-          properties: {
-            verified: { type: 'boolean', example: true }
-          }
-        }
-      }
-    }
-  })
-  @ApiResponse({ 
-    status: 400, 
-    description: 'Bad Request - Invalid password',
-    schema: {
-      type: 'object',
-      properties: {
-        statusCode: { type: 'number', example: 400 },
-        message: { type: 'string', example: 'Invalid password' },
-        error: { type: 'string', example: 'Bad Request' }
-      }
-    }
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Unauthorized - Missing authentication',
-    schema: UnauthorizedResponseSchema
-  })
-  @Post('verify-password')
-  @ResponseMessage('Password verified successfully')
-  verifyPassword(@Body() verifyPasswordDto: VerifyPasswordDto, @User() user: IUser) {
-    return this.usersService.verifyPassword(verifyPasswordDto.password, user);
-  }
 }

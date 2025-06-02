@@ -137,19 +137,52 @@ export class UsersService {
   isValidPasword(password: string, hash: string) {
     return compareSync(password, hash);
   }
-
   async update(id: number, user: IUser, updateUserDto: UpdateUserDto) {
     if (user.id !== id && user.role !== 'ADMIN') {
       throw new BadRequestException(
         'You cannot update information of another user',
       );
     }
-    return await this.prisma.user.update({
+
+    // Verify current password
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id },
+      select: { password: true },
+    });
+    
+    if (!dbUser) {
+      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    }
+
+    // Verify password
+    const isPasswordMatching = this.isValidPasword(updateUserDto.currentPassword, dbUser.password);
+    if (!isPasswordMatching) {
+      throw new BadRequestException('Invalid current password');
+    }    // Prepare update data (remove verification fields)
+    const { currentPassword, updatePassword, ...updateData } = updateUserDto;
+    
+    // Create a data object for the update
+    const dataToUpdate: any = { ...updateData };
+    
+    // If updatePassword is provided, hash it and include in update
+    if (updatePassword) {
+      dataToUpdate.password = this.getHashedPassword(updatePassword);
+    }    return await this.prisma.user.update({
       where: {
         id,
       },
-      data: {
-        ...updateUserDto,
+      data: dataToUpdate,
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        phone: true,
+        address: true,
+        age: true,
+        gender: true,
+        role: true,
+        created_time: true,
+        updated_time: true,
       },
     });
   }
@@ -170,20 +203,4 @@ export class UsersService {
     });
   }
 
-  async verifyPassword(password: string, user: IUser) {
-    // Find the user by ID and get the hashed password
-    const dbUser = await this.prisma.user.findUnique({
-      where: { id: user.id },
-      select: { password: true },
-    });
-    if (!dbUser) {
-      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
-    }
-    // Compare the provided password with the hashed password
-    const isPasswordMatching = this.isValidPasword(password, dbUser.password);
-    if (!isPasswordMatching) {
-      throw new BadRequestException('Invalid password');
-    }
-    return { verified: true };
-  }
 }
